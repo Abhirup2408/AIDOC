@@ -13,7 +13,7 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-MODEL_NAME = "gemini-2.5-flash"  # Or "gemini-1.5-pro" if you have access
+MODEL_NAME = "gemini-1.5-flash"  # Or "gemini-1.5-pro" if you have access
 
 # --- UTILITY FUNCTIONS ---
 
