@@ -5,7 +5,7 @@ import os
 # --- CONFIGURATION ---
 
 # Set your Gemini API Key (preferably as an environment variable or Streamlit secrets)
-GEMINI_API_KEY = st.secrets("GOOGLE_API_KEY") 
+GEMINI_API_KEY = st.secrets["GOOGLE_API_KEY"] 
 if not GEMINI_API_KEY:
     st.error("Please set your GEMINI_API_KEY environment variable or Streamlit secret.")
     st.stop()
