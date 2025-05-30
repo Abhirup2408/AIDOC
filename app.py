@@ -1,24 +1,21 @@
 import streamlit as st
 import google.generativeai as genai
 import os
-import tempfile
 
 # --- CONFIGURATION ---
 
-# Set your Gemini API Key (preferably as an environment variable)
-GEMINI_API_KEY = st.secrets["GOOGLE_API_KEY"]
+# Set your Gemini API Key (preferably as an environment variable or Streamlit secrets)
+GEMINI_API_KEY = st.secrets("GOOGLE_API_KEY") 
 if not GEMINI_API_KEY:
-    st.error("Please set your GEMINI_API_KEY environment variable.")
+    st.error("Please set your GEMINI_API_KEY environment variable or Streamlit secret.")
     st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
-
 MODEL_NAME = "gemini-1.5-flash"  # Or "gemini-1.5-pro" if you have access
 
 # --- UTILITY FUNCTIONS ---
 
 def is_medical_query(query):
-    # Basic medical intent filter (expand as needed)
     medical_keywords = [
         "symptom", "disease", "treatment", "medicine", "diagnosis", "doctor",
         "health", "illness", "pain", "fever", "infection", "injury", "test", "scan",
@@ -30,7 +27,6 @@ def is_medical_query(query):
 
 def get_gemini_response(messages, model=MODEL_NAME, vision=False, file_data=None, file_type=None):
     if vision and file_data:
-        # For vision, send image/pdf as part of the input
         parts = [{"text": messages[-1]["content"]}]
         if file_type in ["jpg", "jpeg", "png"]:
             parts.append({"mime_type": f"image/{file_type}", "data": file_data})
@@ -41,7 +37,6 @@ def get_gemini_response(messages, model=MODEL_NAME, vision=False, file_data=None
         response = genai.GenerativeModel(model_name=model).generate_content(parts)
         return response.text
     else:
-        # For text-only chat
         chat_history = []
         for msg in messages:
             chat_history.append({"role": msg["role"], "parts": [msg["content"]]})
@@ -53,14 +48,11 @@ def get_gemini_response(messages, model=MODEL_NAME, vision=False, file_data=None
 # --- STREAMLIT UI ---
 
 st.set_page_config(page_title="AI Medical Assistant", page_icon="🩺", layout="centered")
-
 st.title("🩺 AI Medical Assistant")
 st.markdown("""
 Welcome! This assistant is designed **strictly for medical-related queries**.  
 Select a mode below:
 """)
-
-# --- MODE SELECTION ---
 
 mode = st.selectbox(
     "Choose a mode:",
@@ -84,7 +76,6 @@ if mode == "Student Help":
             st.warning("Please ask only medical-related questions. Non-medical queries are not supported.")
         else:
             st.session_state.student_history.append({"role": "user", "content": query})
-            # System prompt to ensure medical context
             system_prompt = (
                 "You are a helpful medical assistant. Only answer medical, health, or doctor-related questions. "
                 "If the query is not medical, politely refuse to answer."
@@ -95,54 +86,81 @@ if mode == "Student Help":
             st.session_state.student_history.append({"role": "model", "content": response})
             st.markdown(f"**AI:** {response}")
 
-# --- DOCTOR ANALYSIS MODE ---
+# --- DOCTOR ANALYSIS MODE (STEPWISE, STRUCTURED) ---
 
 elif mode == "Doctor Analysis":
     st.header("👨‍⚕️ Doctor Analysis")
     st.info("Simulated doctor: Step-by-step medical history and possible diagnosis. **Strictly medical only.**")
 
-    if "doctor_history" not in st.session_state:
-        st.session_state.doctor_history = []
-    if "doctor_phase" not in st.session_state:
-        st.session_state.doctor_phase = "start"
+    # Define the clinical interview steps and their questions
+    clinical_steps = [
+        ("Chief Complaint", "What brings you in today? What is your main concern?"),
+        ("HPI_Onset", "When did this problem start?"),
+        ("HPI_Location", "Where is the symptom located?"),
+        ("HPI_Duration", "How long does it last? Is it constant or intermittent?"),
+        ("HPI_Character", "What does it feel like (e.g., sharp, dull, throbbing, burning)?"),
+        ("HPI_Aggravating", "What makes it worse?"),
+        ("HPI_Relieving", "What makes it better?"),
+        ("HPI_Timing", "Does it occur at a specific time of day?"),
+        ("HPI_Severity", "On a scale of 0-10, how bad is it?"),
+        ("HPI_Associated", "Are there any other symptoms accompanying the main problem?"),
+        ("PMH", "Do you have any chronic conditions, past illnesses, surgeries, or hospitalizations?"),
+        ("Medications", "What medications are you currently taking? Any allergies?"),
+        ("Family History", "Any significant diseases in your family (e.g., heart disease, diabetes)?"),
+        ("Social History", "Do you smoke, drink alcohol, use recreational drugs? What is your occupation and living situation?"),
+        ("Review of Systems", "Do you have any other symptoms in other body systems (e.g., fever, cough, rashes, joint pain, etc.)?"),
+    ]
 
-    # System prompt for doctor behavior
-    doctor_system_prompt = (
-        "You are 'MediGuide', a virtual health assistant. "
-        "First, ask detailed, step-by-step questions to collect the user's medical history, symptoms, and relevant background. "
-        "Ask only one or two questions at a time. After you believe you have sufficient information, ask the user if they wish to proceed to analysis. "
-        "If yes, summarize the collected history and discuss possible general conditions or tests that might be relevant, "
-        "always reminding the user to consult a real healthcare professional and that this is not a diagnosis. "
-        "If the user asks a non-medical question, politely refuse."
-    )
+    if "doctor_step" not in st.session_state:
+        st.session_state.doctor_step = 0
+    if "doctor_answers" not in st.session_state:
+        st.session_state.doctor_answers = {}
 
-    if len(st.session_state.doctor_history) == 0:
-        st.session_state.doctor_history.append(
-            {"role": "user", "content": doctor_system_prompt}
+    current_step = st.session_state.doctor_step
+
+    if current_step < len(clinical_steps):
+        step_name, step_question = clinical_steps[current_step]
+        st.markdown(f"**{step_name.replace('_', ' ')}**")
+        user_input = st.text_input(step_question, key=f"step_{current_step}")
+        if user_input:
+            if not is_medical_query(user_input) and current_step == 0:
+                st.warning("Please answer with your main medical concern.")
+            else:
+                st.session_state.doctor_answers[step_name] = user_input
+                st.session_state.doctor_step += 1
+                st.experimental_rerun()
+        # Show previous Q&A
+        for idx in range(current_step):
+            prev_name, prev_question = clinical_steps[idx]
+            prev_answer = st.session_state.doctor_answers.get(prev_name, "")
+            st.markdown(f"**{prev_name.replace('_', ' ')}:** {prev_answer}")
+    else:
+        # All steps completed, summarize and provide possible diagnosis
+        summary = "\n".join([f"{k.replace('_',' ')}: {v}" for k, v in st.session_state.doctor_answers.items()])
+        st.markdown("### Summary of your answers:")
+        st.markdown(summary)
+        st.info("Generating possible diagnosis and suggested next steps...")
+
+        # Compose prompt for Gemini
+        diagnostic_prompt = (
+            "You are a careful, expert medical AI. Given the following patient history, "
+            "please do the following:\n"
+            "1. Summarize the key findings.\n"
+            "2. List the most likely differential diagnoses (with reasoning).\n"
+            "3. Suggest the most appropriate next diagnostic tests (with justification).\n"
+            "4. Suggest a general plan for management and follow-up.\n"
+            "5. Remind the user that this is not a real diagnosis and they must consult a healthcare provider.\n\n"
+            f"Patient history:\n{summary}"
         )
-        st.session_state.doctor_history.append(
-            {"role": "model", "content": "Hello, I'm MediGuide, your virtual health assistant. What health concern would you like to discuss today?"}
-        )
+        with st.spinner("Doctor is thinking..."):
+            response = get_gemini_response([{"role": "user", "content": diagnostic_prompt}])
+        st.markdown(f"**Doctor:** {response}")
 
-    for msg in st.session_state.doctor_history[1:]:
-        if msg["role"] == "model":
-            st.markdown(f"**Doctor:** {msg['content']}")
-        else:
-            st.markdown(f"**You:** {msg['content']}")
-
-    user_input = st.text_input("Your response:", key="doctor_query")
-    if user_input:
-        if not is_medical_query(user_input):
-            response = "I'm sorry, but I can only assist with medical or health-related queries."
-            st.session_state.doctor_history.append({"role": "user", "content": user_input})
-            st.session_state.doctor_history.append({"role": "model", "content": response})
-            st.warning(response)
-        else:
-            st.session_state.doctor_history.append({"role": "user", "content": user_input})
-            with st.spinner("Doctor is thinking..."):
-                response = get_gemini_response(st.session_state.doctor_history)
-            st.session_state.doctor_history.append({"role": "model", "content": response})
-            st.markdown(f"**Doctor:** {response}")
+        # Option to restart
+        if st.button("Start new analysis"):
+            st.session_state.doctor_step = 0
+            st.session_state.doctor_answers = {}
+            st.experimental_rerun()
 
     st.caption("Disclaimer: This is a simulated assistant for informational purposes only. Always consult a licensed healthcare provider.")
 
@@ -157,7 +175,6 @@ elif mode == "Report Result":
     if uploaded_file:
         file_type = uploaded_file.type.split("/")[-1]
         file_bytes = uploaded_file.read()
-        # Basic check for medical content (could be improved with OCR or LLM vision)
         prompt = (
             "This is a medical report. Please analyze and summarize the key medical findings, "
             "tests, and any notable results. If this is not a medical report, respond: "
@@ -190,4 +207,3 @@ else:
     It does **not** provide medical advice, diagnosis, or treatment.  
     Always consult a qualified healthcare professional for your health concerns.
     """)
-
