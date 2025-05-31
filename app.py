@@ -128,7 +128,7 @@ elif mode == "Doctor Analysis":
             else:
                 st.session_state.doctor_answers[step_name] = user_input
                 st.session_state.doctor_step += 1
-                st.experimental_rerun()
+                st.rerun()
         # Show previous Q&A
         for idx in range(current_step):
             prev_name, prev_question = clinical_steps[idx]
@@ -160,7 +160,7 @@ elif mode == "Doctor Analysis":
         if st.button("Start new analysis"):
             st.session_state.doctor_step = 0
             st.session_state.doctor_answers = {}
-            st.experimental_rerun()
+            st.rerun()
 
     st.caption("Disclaimer: This is a simulated assistant for informational purposes only. Always consult a licensed healthcare provider.")
 
